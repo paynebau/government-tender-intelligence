@@ -1,0 +1,4 @@
+﻿Year,TenderOrgName,TenderName,TenderAwardPrice,TenderAwardPriceNumber,BidderSuppName,NotObtainSuppName,TenderCaseNo,AwardDate,ProcurementType,ProcurementAttr,TenderAwardWay,SourceFile,SourceCsv
+2025,測試機關A,資訊系統維護案,"1,200,000",1200000,甲資訊股份有限公司,乙顧問公司,A-2025-001,2025-03-10,勞務採購,資訊服務,最低標,sample.xlsx,sample.csv
+2024,測試機關B,雲端平台建置案,"2,500,000",2500000,丙科技有限公司,,B-2024-002,2024-08-15,勞務採購,資訊服務,最有利標,sample.xlsx,sample.csv
+2023,測試機關A,資安監控服務,"800,000",800000,甲資訊股份有限公司,丁資安公司,A-2023-003,2023-05-20,勞務採購,資訊服務,最低標,sample.xlsx,sample.csv

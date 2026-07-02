@@ -1,0 +1,25 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Streamlit and local logs
+.streamlit/secrets.toml
+*.log
+
+# Local generated outputs
+output/*.csv
+!output/.gitkeep
+
+# Local databases rebuilt from source CSV
+*.sqlite
+*.sqlite3
+*.db
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
