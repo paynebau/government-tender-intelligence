@@ -230,7 +230,7 @@ def test_load_data_falls_back_to_full_database_csv(tmp_path, monkeypatch):
 
     assert len(data) == 1
     assert data.iloc[0]["TenderName"] == "完整 fallback 案"
-    assert any("完整資料庫" in error for error in errors)
+    assert errors == []
 
 
 
@@ -283,3 +283,4 @@ def test_update_registered_user_approves_and_grants_admin(tmp_path, monkeypatch)
     assert users["review_user"]["approved"] is True
     assert users["review_user"]["is_admin"] is True
     assert users["review_user"]["reviewed_at"]
+

@@ -398,7 +398,7 @@ def load_data(db_path: str) -> tuple[pd.DataFrame, list[str]]:
         data, errors, csv_dir = load_data_from_csv_dirs(CSV_DIRS)
         if data.empty:
             return data, [DB_MISSING_MESSAGE] + errors
-        return data, [f"找不到 SQLite 資料庫，已改從 CSV 載入資料：{csv_dir.name}"] + errors
+        return data, errors
 
     try:
         with sqlite3.connect(path) as conn:
@@ -1113,6 +1113,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
 
