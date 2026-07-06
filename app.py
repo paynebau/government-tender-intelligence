@@ -196,35 +196,14 @@ def show_login_page() -> bool:
 
 
 def show_app_header() -> None:
-    st.markdown(
-        """
-        <style>
-        .top-logout-link {
-            position: fixed;
-            top: 0.58rem;
-            right: 7.25rem;
-            z-index: 100000;
-            padding: 0.32rem 0.75rem;
-            border: 1px solid rgba(49, 51, 63, 0.2);
-            border-radius: 0.35rem;
-            background: white;
-            color: rgb(49, 51, 63);
-            font-size: 0.875rem;
-            line-height: 1.2;
-            text-decoration: none;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-        }
-        .top-logout-link:hover {
-            border-color: rgba(255, 75, 75, 0.8);
-            color: rgb(255, 75, 75);
-            text-decoration: none;
-        }
-        </style>
-        <a class="top-logout-link" href="?logout=1" target="_self">登出</a>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.title(TITLE)
+    title_column, logout_column = st.columns([6, 1], vertical_alignment="top")
+    with title_column:
+        st.title(TITLE)
+    with logout_column:
+        st.write("")
+        if st.button(LOGOUT_BUTTON_LABEL, key="logout_button", use_container_width=True):
+            st.session_state[AUTH_SESSION_KEY] = False
+            st.rerun()
 
 @st.cache_data
 def load_data(db_path: str) -> tuple[pd.DataFrame, list[str]]:
@@ -948,6 +927,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
 
