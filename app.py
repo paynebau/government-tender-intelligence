@@ -340,6 +340,10 @@ def show_app_header() -> None:
     title_column, logout_column = st.columns([6, 1], vertical_alignment="top")
     with title_column:
         st.title(TITLE)
+        username = st.session_state.get(AUTH_SESSION_USERNAME_KEY, "")
+        role = "管理員" if st.session_state.get(AUTH_SESSION_ADMIN_KEY) else "一般使用者"
+        if username:
+            st.caption(f"目前登入：{username}（{role}）")
     with logout_column:
         st.write("")
         if st.button(LOGOUT_BUTTON_LABEL, key="logout_button", use_container_width=True):
@@ -353,10 +357,12 @@ def show_admin_panel() -> None:
     if not st.session_state.get(AUTH_SESSION_ADMIN_KEY):
         return
 
-    with st.expander("後台管制", expanded=False):
-        rows = read_registered_user_rows()
+    rows = read_registered_user_rows()
+    pending_count = sum(not bool_from_text(row.get("approved", "false")) for row in rows)
+    with st.expander(f"帳號審核 / 後台管制（待審 {pending_count}）", expanded=True):
         if not rows:
-            st.info("目前沒有待審核帳號。")
+            st.info("目前沒有帳號申請。請確認申請帳號送出後有出現成功訊息，並重新整理此頁。")
+            st.caption(f"帳號申請資料檔：{AUTH_USER_STORE_PATH}")
             return
 
         display_rows = [
@@ -1007,6 +1013,7 @@ def main() -> None:
         st.stop()
 
     show_app_header()
+    show_admin_panel()
 
     data, data_errors = load_data(str(DB_PATH))
     show_data_errors(data_errors, fatal=data.empty)
@@ -1113,7 +1120,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
 
 
 
