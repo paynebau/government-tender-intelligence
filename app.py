@@ -1,4 +1,6 @@
-﻿import hmac
+﻿import csv
+from datetime import datetime
+import hmac
 import os
 from pathlib import Path
 import sqlite3
@@ -22,6 +24,8 @@ LOGIN_ERROR_MESSAGE = "\u5e33\u865f\u6216\u5bc6\u78bc\u932f\u8aa4\u3002"
 DEFAULT_AUTH_USERNAME = "admin"
 DEFAULT_AUTH_PASSWORD = "admin123"
 AUTH_SESSION_KEY = "authenticated"
+LOGOUT_QUERY_PARAM = "logout"
+AUTH_AUDIT_PATH = PROJECT_ROOT / "output" / "login_audit.csv"
 SEARCH_LABEL = "\u641c\u5c0b / \u81ea\u7136\u8a9e\u8a00\u67e5\u8a62"
 SEARCH_PLACEHOLDER = (
     "\u8f38\u5165\u6a5f\u95dc\u3001\u6a19\u6848\u540d\u7a31\u3001"
@@ -91,18 +95,38 @@ def get_secret_value(section: str, key: str) -> str | None:
     return str(value) if value is not None else None
 
 
+def get_auth_users() -> dict[str, dict[str, object]]:
+    env_username = os.getenv("TENDER_APP_USERNAME")
+    env_password = os.getenv("TENDER_APP_PASSWORD")
+    if env_username and env_password:
+        return {env_username: {"password": env_password, "approved": True, "source": "env"}}
+
+    auth_section = {}
+    try:
+        auth_section = st.secrets.get("auth", {})
+    except Exception:
+        auth_section = {}
+
+    users = auth_section.get("users", {}) if hasattr(auth_section, "get") else {}
+    if users:
+        return {
+            str(username): {
+                "password": str(settings.get("password", "")) if hasattr(settings, "get") else "",
+                "approved": bool(settings.get("approved", False)) if hasattr(settings, "get") else False,
+                "source": "secrets",
+            }
+            for username, settings in users.items()
+        }
+
+    username = get_secret_value("auth", "username") or DEFAULT_AUTH_USERNAME
+    password = get_secret_value("auth", "password") or DEFAULT_AUTH_PASSWORD
+    return {username: {"password": password, "approved": True, "source": "default"}}
+
+
 def get_auth_credentials() -> tuple[str, str]:
-    username = (
-        os.getenv("TENDER_APP_USERNAME")
-        or get_secret_value("auth", "username")
-        or DEFAULT_AUTH_USERNAME
-    )
-    password = (
-        os.getenv("TENDER_APP_PASSWORD")
-        or get_secret_value("auth", "password")
-        or DEFAULT_AUTH_PASSWORD
-    )
-    return username, password
+    users = get_auth_users()
+    username = next(iter(users))
+    return username, str(users[username].get("password", ""))
 
 
 def validate_login(username: str, password: str, expected_username: str, expected_password: str) -> bool:
@@ -111,7 +135,46 @@ def validate_login(username: str, password: str, expected_username: str, expecte
     return username_matches and password_matches
 
 
+def review_login(username: str, password: str, users: dict[str, dict[str, object]]) -> tuple[bool, str]:
+    user = users.get(username)
+    if user is None:
+        return False, "unknown_user"
+    if not bool(user.get("approved", False)):
+        return False, "not_approved"
+    expected_password = str(user.get("password", ""))
+    if not hmac.compare_digest(password, expected_password):
+        return False, "invalid_password"
+    return True, "approved"
+
+
+def write_login_audit(username: str, status: str) -> None:
+    try:
+        AUTH_AUDIT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        file_exists = AUTH_AUDIT_PATH.exists()
+        with AUTH_AUDIT_PATH.open("a", newline="", encoding="utf-8-sig") as file:
+            writer = csv.DictWriter(file, fieldnames=["timestamp", "username", "status"])
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(
+                {
+                    "timestamp": datetime.now().isoformat(timespec="seconds"),
+                    "username": username,
+                    "status": status,
+                }
+            )
+    except OSError:
+        return
+
+
+def handle_logout_query() -> None:
+    if st.query_params.get(LOGOUT_QUERY_PARAM) == "1":
+        st.session_state[AUTH_SESSION_KEY] = False
+        st.query_params.clear()
+        st.rerun()
+
+
 def show_login_page() -> bool:
+    handle_logout_query()
     if st.session_state.get(AUTH_SESSION_KEY):
         return True
 
@@ -119,10 +182,11 @@ def show_login_page() -> bool:
     st.subheader(LOGIN_TITLE)
     username = st.text_input(USERNAME_LABEL)
     password = st.text_input(PASSWORD_LABEL, type="password")
-    expected_username, expected_password = get_auth_credentials()
 
     if st.button(LOGIN_BUTTON_LABEL, type="primary"):
-        if validate_login(username, password, expected_username, expected_password):
+        approved, status = review_login(username, password, get_auth_users())
+        write_login_audit(username, status)
+        if approved:
             st.session_state[AUTH_SESSION_KEY] = True
             st.rerun()
         else:
@@ -132,14 +196,35 @@ def show_login_page() -> bool:
 
 
 def show_app_header() -> None:
-    title_column, logout_column = st.columns([5, 1])
-    with title_column:
-        st.title(TITLE)
-    with logout_column:
-        st.write("")
-        if st.button(LOGOUT_BUTTON_LABEL, key="logout_button"):
-            st.session_state[AUTH_SESSION_KEY] = False
-            st.rerun()
+    st.markdown(
+        """
+        <style>
+        .top-logout-link {
+            position: fixed;
+            top: 0.58rem;
+            right: 7.25rem;
+            z-index: 100000;
+            padding: 0.32rem 0.75rem;
+            border: 1px solid rgba(49, 51, 63, 0.2);
+            border-radius: 0.35rem;
+            background: white;
+            color: rgb(49, 51, 63);
+            font-size: 0.875rem;
+            line-height: 1.2;
+            text-decoration: none;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        }
+        .top-logout-link:hover {
+            border-color: rgba(255, 75, 75, 0.8);
+            color: rgb(255, 75, 75);
+            text-decoration: none;
+        }
+        </style>
+        <a class="top-logout-link" href="?logout=1" target="_self">登出</a>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.title(TITLE)
 
 @st.cache_data
 def load_data(db_path: str) -> tuple[pd.DataFrame, list[str]]:
@@ -863,6 +948,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
 

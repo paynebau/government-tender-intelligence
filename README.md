@@ -155,3 +155,20 @@ password = "your-password"
 
 
 
+
+
+## 後台帳號審核
+
+部署在 Streamlit Community Cloud 時，可在 Secrets 設定後台核准帳號清單：
+
+```toml
+[auth.users.admin]
+password = "your-password"
+approved = true
+
+[auth.users.pending_user]
+password = "pending-password"
+approved = false
+```
+
+只有 `approved = true` 的帳號可以登入。登入嘗試會寫入 `output/login_audit.csv`，只記錄時間、帳號與審核狀態，不記錄密碼。

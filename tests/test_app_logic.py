@@ -143,6 +143,30 @@ def test_authenticated_header_replaces_sidebar_logout():
     assert not hasattr(app, "show_logout_control")
 
 
+def test_review_login_requires_backend_approval():
+    users = {
+        "approved_user": {"password": "pass123", "approved": True},
+        "pending_user": {"password": "pass123", "approved": False},
+    }
+
+    assert app.review_login("approved_user", "pass123", users) == (True, "approved")
+    assert app.review_login("approved_user", "wrong", users) == (False, "invalid_password")
+    assert app.review_login("pending_user", "pass123", users) == (False, "not_approved")
+    assert app.review_login("missing", "pass123", users) == (False, "unknown_user")
+
+
+def test_write_login_audit_records_status_without_password(tmp_path, monkeypatch):
+    audit_path = tmp_path / "login_audit.csv"
+    monkeypatch.setattr(app, "AUTH_AUDIT_PATH", audit_path)
+
+    app.write_login_audit("review_user", "not_approved")
+
+    text = audit_path.read_text(encoding="utf-8-sig")
+    assert "review_user" in text
+    assert "not_approved" in text
+    assert "password" not in text.lower()
+
+
 def test_load_data_from_csv_accepts_full_database_flat_files(tmp_path):
     csv_path = tmp_path / "award_2026_flat.csv"
     csv_path.write_text(
@@ -207,3 +231,4 @@ def test_load_data_falls_back_to_full_database_csv(tmp_path, monkeypatch):
     assert len(data) == 1
     assert data.iloc[0]["TenderName"] == "完整 fallback 案"
     assert any("完整資料庫" in error for error in errors)
+

@@ -65,7 +65,9 @@ database/tenders.sqlite
 - app 進入查詢頁前需顯示登入頁。
 - 使用者需輸入帳號與密碼才能查看資料。
 - 帳密優先讀取環境變數或 Streamlit secrets；未設定時使用本機預設帳密。
-- 登入狀態保存在 Streamlit session state，並在查詢頁右上角提供登出按鈕。
+- Streamlit secrets 可設定後台核准帳號清單，只有 `approved = true` 的帳號可以登入。
+- 登入嘗試需留下審核紀錄，紀錄時間、帳號與狀態，不記錄密碼。
+- 登入狀態保存在 Streamlit session state，並將登出控制固定在頁面右上角、靠近 Share 區域。
 
 ### 4.1 資料載入
 
@@ -181,5 +183,7 @@ v1.0 不包含：
 - 建立外部資料源下載樣本與欄位 mapping 測試。
 - 評估串接 LLM，提供真正自然語言問答與摘要。
 - 規劃登入、權限控管與資料版本記錄。
+
+
 
 
