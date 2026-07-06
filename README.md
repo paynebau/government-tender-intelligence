@@ -172,3 +172,15 @@ approved = false
 ```
 
 只有 `approved = true` 的帳號可以登入。登入嘗試會寫入 `output/login_audit.csv`，只記錄時間、帳號與審核狀態，不記錄密碼。
+
+## 首頁申請帳號與管理員審核
+
+登入頁提供「申請帳號」分頁。使用者輸入新帳號與密碼後，資料會寫入 `output/auth_users.csv`，密碼以 PBKDF2 雜湊保存，預設狀態為未核准。
+
+管理員登入後，可在查詢頁上方的「後台管制」區塊查看申請帳號，並執行：
+
+- 核准帳號
+- 停用帳號
+- 設定或取消管理員權限
+
+`output/auth_users.csv` 與 `output/login_audit.csv` 都屬於本機/部署環境資料，不會提交到 GitHub。

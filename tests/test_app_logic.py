@@ -232,3 +232,54 @@ def test_load_data_falls_back_to_full_database_csv(tmp_path, monkeypatch):
     assert data.iloc[0]["TenderName"] == "完整 fallback 案"
     assert any("完整資料庫" in error for error in errors)
 
+
+
+def test_password_hash_round_trip():
+    stored = app.hash_password("secret-pass", "fixed-salt")
+
+    assert stored.startswith(app.PASSWORD_HASH_PREFIX)
+    assert app.verify_password("secret-pass", stored)
+    assert not app.verify_password("wrong-pass", stored)
+
+
+def test_register_user_creates_pending_hashed_account(tmp_path, monkeypatch):
+    store_path = tmp_path / "auth_users.csv"
+    monkeypatch.setattr(app, "AUTH_USER_STORE_PATH", store_path)
+
+    created, message = app.register_user("new_user", "pass123", "pass123")
+    users = app.load_registered_users()
+
+    assert created
+    assert "等待管理員審核" in message
+    assert users["new_user"]["approved"] is False
+    assert users["new_user"]["is_admin"] is False
+    assert users["new_user"]["password"] != "pass123"
+    assert app.verify_password("pass123", str(users["new_user"]["password"]))
+
+
+def test_register_user_rejects_duplicate_and_mismatched_password(tmp_path, monkeypatch):
+    store_path = tmp_path / "auth_users.csv"
+    monkeypatch.setattr(app, "AUTH_USER_STORE_PATH", store_path)
+
+    assert app.register_user("new_user", "pass123", "pass123")[0]
+    duplicate_created, duplicate_message = app.register_user("new_user", "pass123", "pass123")
+    mismatch_created, mismatch_message = app.register_user("other_user", "pass123", "pass456")
+
+    assert not duplicate_created
+    assert "已存在" in duplicate_message
+    assert not mismatch_created
+    assert "不一致" in mismatch_message
+
+
+def test_update_registered_user_approves_and_grants_admin(tmp_path, monkeypatch):
+    store_path = tmp_path / "auth_users.csv"
+    monkeypatch.setattr(app, "AUTH_USER_STORE_PATH", store_path)
+    app.register_user("review_user", "pass123", "pass123")
+
+    assert app.update_registered_user("review_user", approved=True)
+    assert app.update_registered_user("review_user", is_admin=True)
+    users = app.load_registered_users()
+
+    assert users["review_user"]["approved"] is True
+    assert users["review_user"]["is_admin"] is True
+    assert users["review_user"]["reviewed_at"]

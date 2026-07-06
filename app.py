@@ -1,5 +1,7 @@
-﻿import csv
+﻿import base64
+import csv
 from datetime import datetime
+import hashlib
 import hmac
 import os
 from pathlib import Path
@@ -24,8 +26,13 @@ LOGIN_ERROR_MESSAGE = "\u5e33\u865f\u6216\u5bc6\u78bc\u932f\u8aa4\u3002"
 DEFAULT_AUTH_USERNAME = "admin"
 DEFAULT_AUTH_PASSWORD = "admin123"
 AUTH_SESSION_KEY = "authenticated"
+AUTH_SESSION_USERNAME_KEY = "authenticated_username"
+AUTH_SESSION_ADMIN_KEY = "authenticated_is_admin"
 LOGOUT_QUERY_PARAM = "logout"
 AUTH_AUDIT_PATH = PROJECT_ROOT / "output" / "login_audit.csv"
+AUTH_USER_STORE_PATH = PROJECT_ROOT / "output" / "auth_users.csv"
+AUTH_USER_FIELDS = ["username", "password_hash", "approved", "is_admin", "created_at", "reviewed_at"]
+PASSWORD_HASH_PREFIX = "pbkdf2_sha256"
 SEARCH_LABEL = "\u641c\u5c0b / \u81ea\u7136\u8a9e\u8a00\u67e5\u8a62"
 SEARCH_PLACEHOLDER = (
     "\u8f38\u5165\u6a5f\u95dc\u3001\u6a19\u6848\u540d\u7a31\u3001"
@@ -95,11 +102,76 @@ def get_secret_value(section: str, key: str) -> str | None:
     return str(value) if value is not None else None
 
 
-def get_auth_users() -> dict[str, dict[str, object]]:
+def bool_from_text(value: object) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "是"}
+
+
+def hash_password(password: str, salt: str | None = None) -> str:
+    salt = salt or base64.urlsafe_b64encode(os.urandom(16)).decode("ascii")
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 120000)
+    encoded = base64.urlsafe_b64encode(digest).decode("ascii")
+    return f"{PASSWORD_HASH_PREFIX}${salt}${encoded}"
+
+
+def verify_password(password: str, stored_password: str) -> bool:
+    if stored_password.startswith(f"{PASSWORD_HASH_PREFIX}$"):
+        try:
+            _, salt, expected = stored_password.split("$", 2)
+        except ValueError:
+            return False
+        candidate = hash_password(password, salt).split("$", 2)[2]
+        return hmac.compare_digest(candidate, expected)
+    return hmac.compare_digest(password, stored_password)
+
+
+def load_registered_users() -> dict[str, dict[str, object]]:
+    if not AUTH_USER_STORE_PATH.exists():
+        return {}
+
+    users: dict[str, dict[str, object]] = {}
+    try:
+        with AUTH_USER_STORE_PATH.open("r", newline="", encoding="utf-8-sig") as file:
+            for row in csv.DictReader(file):
+                username = str(row.get("username", "")).strip()
+                if not username:
+                    continue
+                users[username] = {
+                    "password": str(row.get("password_hash", "")),
+                    "approved": bool_from_text(row.get("approved", "false")),
+                    "is_admin": bool_from_text(row.get("is_admin", "false")),
+                    "created_at": str(row.get("created_at", "")),
+                    "reviewed_at": str(row.get("reviewed_at", "")),
+                    "source": "registered",
+                }
+    except OSError:
+        return {}
+    return users
+
+
+def read_registered_user_rows() -> list[dict[str, str]]:
+    if not AUTH_USER_STORE_PATH.exists():
+        return []
+    try:
+        with AUTH_USER_STORE_PATH.open("r", newline="", encoding="utf-8-sig") as file:
+            return [dict(row) for row in csv.DictReader(file)]
+    except OSError:
+        return []
+
+
+def write_registered_user_rows(rows: list[dict[str, object]]) -> None:
+    AUTH_USER_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with AUTH_USER_STORE_PATH.open("w", newline="", encoding="utf-8-sig") as file:
+        writer = csv.DictWriter(file, fieldnames=AUTH_USER_FIELDS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({field: row.get(field, "") for field in AUTH_USER_FIELDS})
+
+
+def configured_auth_users() -> dict[str, dict[str, object]]:
     env_username = os.getenv("TENDER_APP_USERNAME")
     env_password = os.getenv("TENDER_APP_PASSWORD")
     if env_username and env_password:
-        return {env_username: {"password": env_password, "approved": True, "source": "env"}}
+        return {env_username: {"password": env_password, "approved": True, "is_admin": True, "source": "env"}}
 
     auth_section = {}
     try:
@@ -113,6 +185,7 @@ def get_auth_users() -> dict[str, dict[str, object]]:
             str(username): {
                 "password": str(settings.get("password", "")) if hasattr(settings, "get") else "",
                 "approved": bool(settings.get("approved", False)) if hasattr(settings, "get") else False,
+                "is_admin": bool(settings.get("is_admin", False) or settings.get("admin", False)) if hasattr(settings, "get") else False,
                 "source": "secrets",
             }
             for username, settings in users.items()
@@ -120,7 +193,13 @@ def get_auth_users() -> dict[str, dict[str, object]]:
 
     username = get_secret_value("auth", "username") or DEFAULT_AUTH_USERNAME
     password = get_secret_value("auth", "password") or DEFAULT_AUTH_PASSWORD
-    return {username: {"password": password, "approved": True, "source": "default"}}
+    return {username: {"password": password, "approved": True, "is_admin": True, "source": "default"}}
+
+
+def get_auth_users() -> dict[str, dict[str, object]]:
+    users = load_registered_users()
+    users.update(configured_auth_users())
+    return users
 
 
 def get_auth_credentials() -> tuple[str, str]:
@@ -131,7 +210,7 @@ def get_auth_credentials() -> tuple[str, str]:
 
 def validate_login(username: str, password: str, expected_username: str, expected_password: str) -> bool:
     username_matches = hmac.compare_digest(username, expected_username)
-    password_matches = hmac.compare_digest(password, expected_password)
+    password_matches = verify_password(password, expected_password)
     return username_matches and password_matches
 
 
@@ -142,9 +221,51 @@ def review_login(username: str, password: str, users: dict[str, dict[str, object
     if not bool(user.get("approved", False)):
         return False, "not_approved"
     expected_password = str(user.get("password", ""))
-    if not hmac.compare_digest(password, expected_password):
+    if not verify_password(password, expected_password):
         return False, "invalid_password"
     return True, "approved"
+
+
+def register_user(username: str, password: str, confirm_password: str) -> tuple[bool, str]:
+    username = username.strip()
+    if not username or not password:
+        return False, "請輸入帳號與密碼。"
+    if password != confirm_password:
+        return False, "兩次輸入的密碼不一致。"
+    if username in get_auth_users():
+        return False, "此帳號已存在或正在審核。"
+
+    rows = read_registered_user_rows()
+    rows.append(
+        {
+            "username": username,
+            "password_hash": hash_password(password),
+            "approved": "false",
+            "is_admin": "false",
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "reviewed_at": "",
+        }
+    )
+    write_registered_user_rows(rows)
+    return True, "帳號申請已送出，請等待管理員審核。"
+
+
+def update_registered_user(username: str, *, approved: bool | None = None, is_admin: bool | None = None) -> bool:
+    rows = read_registered_user_rows()
+    changed = False
+    for row in rows:
+        if row.get("username") != username:
+            continue
+        if approved is not None:
+            row["approved"] = "true" if approved else "false"
+            row["reviewed_at"] = datetime.now().isoformat(timespec="seconds")
+        if is_admin is not None:
+            row["is_admin"] = "true" if is_admin else "false"
+        changed = True
+        break
+    if changed:
+        write_registered_user_rows(rows)
+    return changed
 
 
 def write_login_audit(username: str, status: str) -> None:
@@ -169,6 +290,8 @@ def write_login_audit(username: str, status: str) -> None:
 def handle_logout_query() -> None:
     if st.query_params.get(LOGOUT_QUERY_PARAM) == "1":
         st.session_state[AUTH_SESSION_KEY] = False
+        st.session_state[AUTH_SESSION_USERNAME_KEY] = ""
+        st.session_state[AUTH_SESSION_ADMIN_KEY] = False
         st.query_params.clear()
         st.rerun()
 
@@ -179,18 +302,36 @@ def show_login_page() -> bool:
         return True
 
     st.title(TITLE)
-    st.subheader(LOGIN_TITLE)
-    username = st.text_input(USERNAME_LABEL)
-    password = st.text_input(PASSWORD_LABEL, type="password")
+    login_tab, register_tab = st.tabs(["登入", "申請帳號"])
 
-    if st.button(LOGIN_BUTTON_LABEL, type="primary"):
-        approved, status = review_login(username, password, get_auth_users())
-        write_login_audit(username, status)
-        if approved:
-            st.session_state[AUTH_SESSION_KEY] = True
-            st.rerun()
-        else:
-            st.error(LOGIN_ERROR_MESSAGE)
+    with login_tab:
+        st.subheader(LOGIN_TITLE)
+        username = st.text_input(USERNAME_LABEL)
+        password = st.text_input(PASSWORD_LABEL, type="password")
+
+        if st.button(LOGIN_BUTTON_LABEL, type="primary"):
+            users = get_auth_users()
+            approved, status = review_login(username, password, users)
+            write_login_audit(username, status)
+            if approved:
+                st.session_state[AUTH_SESSION_KEY] = True
+                st.session_state[AUTH_SESSION_USERNAME_KEY] = username
+                st.session_state[AUTH_SESSION_ADMIN_KEY] = bool(users[username].get("is_admin", False))
+                st.rerun()
+            else:
+                st.error(LOGIN_ERROR_MESSAGE)
+
+    with register_tab:
+        st.subheader("申請帳號")
+        new_username = st.text_input("新帳號", key="register_username")
+        new_password = st.text_input("新密碼", type="password", key="register_password")
+        confirm_password = st.text_input("確認密碼", type="password", key="register_confirm_password")
+        if st.button("送出申請", key="register_button"):
+            created, message = register_user(new_username, new_password, confirm_password)
+            if created:
+                st.success(message)
+            else:
+                st.error(message)
 
     return False
 
@@ -203,7 +344,52 @@ def show_app_header() -> None:
         st.write("")
         if st.button(LOGOUT_BUTTON_LABEL, key="logout_button", use_container_width=True):
             st.session_state[AUTH_SESSION_KEY] = False
+            st.session_state[AUTH_SESSION_USERNAME_KEY] = ""
+            st.session_state[AUTH_SESSION_ADMIN_KEY] = False
             st.rerun()
+
+
+def show_admin_panel() -> None:
+    if not st.session_state.get(AUTH_SESSION_ADMIN_KEY):
+        return
+
+    with st.expander("後台管制", expanded=False):
+        rows = read_registered_user_rows()
+        if not rows:
+            st.info("目前沒有待審核帳號。")
+            return
+
+        display_rows = [
+            {
+                "帳號": row.get("username", ""),
+                "已核准": bool_from_text(row.get("approved", "false")),
+                "管理員": bool_from_text(row.get("is_admin", "false")),
+                "申請時間": row.get("created_at", ""),
+                "審核時間": row.get("reviewed_at", ""),
+            }
+            for row in rows
+        ]
+        st.dataframe(pd.DataFrame(display_rows), use_container_width=True, hide_index=True)
+
+        usernames = [row.get("username", "") for row in rows if row.get("username")]
+        selected_user = st.selectbox("審核帳號", usernames)
+        action_column, disable_column, admin_column = st.columns(3)
+        with action_column:
+            if st.button("核准帳號", key="approve_user"):
+                update_registered_user(selected_user, approved=True)
+                st.success(f"已核准 {selected_user}")
+                st.rerun()
+        with disable_column:
+            if st.button("停用帳號", key="disable_user"):
+                update_registered_user(selected_user, approved=False)
+                st.warning(f"已停用 {selected_user}")
+                st.rerun()
+        with admin_column:
+            make_admin = st.checkbox("設為管理員", key="make_admin")
+            if st.button("更新權限", key="update_admin"):
+                update_registered_user(selected_user, is_admin=make_admin)
+                st.success(f"已更新 {selected_user} 權限")
+                st.rerun()
 
 @st.cache_data
 def load_data(db_path: str) -> tuple[pd.DataFrame, list[str]]:
@@ -927,6 +1113,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
