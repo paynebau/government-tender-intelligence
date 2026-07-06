@@ -23,3 +23,6 @@ output/*.csv
 Thumbs.db
 .vscode/
 .idea/
+
+# Local full raw database exports
+完整資料庫/

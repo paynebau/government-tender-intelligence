@@ -144,9 +144,9 @@ def import_csvs(csv_dir: Path, db_path: Path, rebuild: bool = True) -> tuple[int
     if not csv_dir.exists() or not csv_dir.is_dir():
         raise FileNotFoundError(f"CSV directory not found: {csv_dir}")
 
-    csv_paths = sorted(csv_dir.glob("*SourceData.csv"))
+    csv_paths = sorted({*csv_dir.glob("*SourceData.csv"), *csv_dir.glob("award_*_flat.csv")})
     if not csv_paths:
-        raise FileNotFoundError(f"No *SourceData.csv files found in: {csv_dir}")
+        raise FileNotFoundError(f"No supported CSV files found in: {csv_dir}")
 
     for csv_path in csv_paths:
         frame, error = load_csv(csv_path)
@@ -176,7 +176,7 @@ def import_csvs(csv_dir: Path, db_path: Path, rebuild: bool = True) -> tuple[int
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Import tender SourceData CSV files into SQLite.")
+    parser = argparse.ArgumentParser(description="Import tender CSV files into SQLite.")
     parser.add_argument("--csv-dir", type=Path, default=DEFAULT_CSV_DIR)
     parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
     parser.add_argument("--append", action="store_true", help="Append rows instead of rebuilding the tenders table.")
@@ -192,5 +192,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 

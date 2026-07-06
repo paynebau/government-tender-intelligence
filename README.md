@@ -22,6 +22,16 @@ database/tenders.sqlite
 ```powershell
 & "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" .\scripts\import_to_sqlite.py --csv-dir .\資料庫_CSV --db .\database\tenders.sqlite
 ```
+
+## 完整資料庫匯入
+
+若要使用 `完整資料庫` 內的 2020-2026 年 `award_*_flat.csv`，可執行：
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" .\scripts\import_to_sqlite.py --csv-dir .\完整資料庫 --db .\database\tenders.sqlite
+```
+
+目前完整資料庫匯入結果為 71,313 筆。
 ## 啟動方式
 
 在 PowerShell 執行：
@@ -36,16 +46,42 @@ powershell -ExecutionPolicy Bypass -File .\run_app.ps1
 ```text
 http://localhost:8501
 ```
+## 登入設定
+
+app 啟動後會先顯示登入頁，需要輸入帳號與密碼才能進入查詢系統。
+
+本機預設帳密：
+
+```text
+帳號：admin
+密碼：admin123
+```
+
+部署或正式使用時，建議改用環境變數：
+
+```powershell
+$env:TENDER_APP_USERNAME="your-user"
+$env:TENDER_APP_PASSWORD="your-password"
+```
+
+若部署在 Streamlit Community Cloud，可在 Secrets 設定：
+
+```toml
+[auth]
+username = "your-user"
+password = "your-password"
+```
 
 ## 資料來源
 
-目前匯入來源：
+目前匯入來源支援：
 
 ```text
 資料庫_CSV/*SourceData.csv
+完整資料庫/award_*_flat.csv
 ```
 
-年度從檔名解析，例如 `award_2025_..._SourceData.csv` 會解析為 `2025`。完整欄位對照請見 `docs/FIELD_MAPPING.md`。
+年度從檔名解析，例如 `award_2025_..._SourceData.csv` 或 `award_2025_flat.csv` 會解析為 `2025`。完整欄位對照請見 `docs/FIELD_MAPPING.md`。
 
 ## 主要欄位
 
@@ -105,5 +141,7 @@ http://localhost:8501
 ## 外部資料源評估
 
 政府採購公開資料 API 與 g0v/PCC 相關資料源評估請見 docs/API_EVALUATION.md。
+
+
 
 

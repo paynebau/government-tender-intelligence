@@ -1,4 +1,6 @@
-﻿from pathlib import Path
+﻿import hmac
+import os
+from pathlib import Path
 import sqlite3
 
 import pandas as pd
@@ -9,6 +11,15 @@ PROJECT_ROOT = Path(__file__).parent
 DB_PATH = PROJECT_ROOT / "database" / "tenders.sqlite"
 CSV_DIR = PROJECT_ROOT / "資料庫_CSV"
 TITLE = "\u653f\u5e9c\u6a19\u6848\u60c5\u8cc7\u67e5\u8a62\u7cfb\u7d71"
+LOGIN_TITLE = "\u767b\u5165"
+USERNAME_LABEL = "\u5e33\u865f"
+PASSWORD_LABEL = "\u5bc6\u78bc"
+LOGIN_BUTTON_LABEL = "\u767b\u5165"
+LOGOUT_BUTTON_LABEL = "\u767b\u51fa"
+LOGIN_ERROR_MESSAGE = "\u5e33\u865f\u6216\u5bc6\u78bc\u932f\u8aa4\u3002"
+DEFAULT_AUTH_USERNAME = "admin"
+DEFAULT_AUTH_PASSWORD = "admin123"
+AUTH_SESSION_KEY = "authenticated"
 SEARCH_LABEL = "\u641c\u5c0b / \u81ea\u7136\u8a9e\u8a00\u67e5\u8a62"
 SEARCH_PLACEHOLDER = (
     "\u8f38\u5165\u6a5f\u95dc\u3001\u6a19\u6848\u540d\u7a31\u3001"
@@ -67,6 +78,67 @@ FROM tenders
 """
 
 
+
+
+def get_secret_value(section: str, key: str) -> str | None:
+    try:
+        section_values = st.secrets.get(section, {})
+    except Exception:
+        return None
+    value = section_values.get(key) if hasattr(section_values, "get") else None
+    return str(value) if value is not None else None
+
+
+def get_auth_credentials() -> tuple[str, str]:
+    username = (
+        os.getenv("TENDER_APP_USERNAME")
+        or get_secret_value("auth", "username")
+        or DEFAULT_AUTH_USERNAME
+    )
+    password = (
+        os.getenv("TENDER_APP_PASSWORD")
+        or get_secret_value("auth", "password")
+        or DEFAULT_AUTH_PASSWORD
+    )
+    return username, password
+
+
+def validate_login(username: str, password: str, expected_username: str, expected_password: str) -> bool:
+    username_matches = hmac.compare_digest(username, expected_username)
+    password_matches = hmac.compare_digest(password, expected_password)
+    return username_matches and password_matches
+
+
+def show_login_page() -> bool:
+    if st.session_state.get(AUTH_SESSION_KEY):
+        return True
+
+    st.title(TITLE)
+    st.subheader(LOGIN_TITLE)
+    username = st.text_input(USERNAME_LABEL)
+    password = st.text_input(PASSWORD_LABEL, type="password")
+    expected_username, expected_password = get_auth_credentials()
+
+    if st.button(LOGIN_BUTTON_LABEL, type="primary"):
+        if validate_login(username, password, expected_username, expected_password):
+            st.session_state[AUTH_SESSION_KEY] = True
+            st.rerun()
+        else:
+            st.error(LOGIN_ERROR_MESSAGE)
+
+    return False
+
+
+def show_app_header() -> None:
+    title_column, logout_column = st.columns([5, 1])
+    with title_column:
+        st.title(TITLE)
+    with logout_column:
+        st.write("")
+        if st.button(LOGOUT_BUTTON_LABEL, key="logout_button"):
+            st.session_state[AUTH_SESSION_KEY] = False
+            st.rerun()
+
 @st.cache_data
 def load_data(db_path: str) -> tuple[pd.DataFrame, list[str]]:
     path = Path(db_path)
@@ -119,7 +191,8 @@ def load_data_from_csv(csv_dir: Path) -> tuple[pd.DataFrame, list[str]]:
 
     frames: list[pd.DataFrame] = []
     errors: list[str] = []
-    for csv_path in sorted(csv_dir.glob("*SourceData.csv")):
+    csv_paths = sorted({*csv_dir.glob("*SourceData.csv"), *csv_dir.glob("award_*_flat.csv")})
+    for csv_path in csv_paths:
         year = parse_year_from_csv(csv_path)
         if year is None:
             errors.append(f"{csv_path.name}: 無法從檔名解析年度")
@@ -154,7 +227,7 @@ def load_data_from_csv(csv_dir: Path) -> tuple[pd.DataFrame, list[str]]:
         frames.append(output)
 
     if not frames:
-        return pd.DataFrame(), errors or ["找不到可用的 *SourceData.csv 資料。"]
+        return pd.DataFrame(), errors or ["找不到可用的標案 CSV 資料。"]
 
     return pd.concat(frames, ignore_index=True), errors
 def show_data_errors(errors: list[str], *, fatal: bool = False) -> None:
@@ -669,7 +742,10 @@ def show_tender_detail(result: pd.DataFrame) -> None:
 
 def main() -> None:
     st.set_page_config(page_title=TITLE, layout="wide")
-    st.title(TITLE)
+    if not show_login_page():
+        st.stop()
+
+    show_app_header()
 
     data, data_errors = load_data(str(DB_PATH))
     show_data_errors(data_errors, fatal=data.empty)
@@ -776,6 +852,12 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
 
 
 

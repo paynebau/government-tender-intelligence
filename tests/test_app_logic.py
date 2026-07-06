@@ -130,3 +130,30 @@ def test_build_similar_tenders_excludes_source_and_scores_candidates():
     assert not similar.empty
     assert "A-2025-001" not in similar["TenderCaseNo"].tolist()
     assert similar.iloc[0]["SimilarityScore"] > 0
+
+
+def test_validate_login_accepts_only_matching_credentials():
+    assert app.validate_login("admin", "admin123", "admin", "admin123")
+    assert not app.validate_login("admin", "wrong", "admin", "admin123")
+    assert not app.validate_login("wrong", "admin123", "admin", "admin123")
+
+
+def test_authenticated_header_replaces_sidebar_logout():
+    assert callable(app.show_app_header)
+    assert not hasattr(app, "show_logout_control")
+
+
+def test_load_data_from_csv_accepts_full_database_flat_files(tmp_path):
+    csv_path = tmp_path / "award_2026_flat.csv"
+    csv_path.write_text(
+        "TenderName,TenderOrgName,TenderAwardPrice,BidderSuppName,NotObtainSuppName\n"
+        "完整資料測試案,測試機關,12345,測試廠商,協作廠商\n",
+        encoding="utf-8-sig",
+    )
+
+    data, errors = app.load_data_from_csv(tmp_path)
+
+    assert errors == []
+    assert len(data) == 1
+    assert data.iloc[0]["Year"] == "2026"
+    assert data.iloc[0]["TenderName"] == "完整資料測試案"
