@@ -23,6 +23,15 @@ database/tenders.sqlite
 & "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" .\scripts\import_to_sqlite.py --csv-dir .\資料庫_CSV --db .\database\tenders.sqlite
 ```
 
+
+## 雲端部署資料讀取順序
+
+app 會優先讀取 `database/tenders.sqlite`。若雲端環境沒有 SQLite，會依序讀取：
+
+1. `完整資料庫/award_*_flat.csv`
+2. `資料庫_CSV/*SourceData.csv`
+
+因此 Streamlit Cloud 不上傳 SQLite 時，會使用 GitHub 上的完整 CSV 資料。
 ## 完整資料庫匯入
 
 若要使用 `完整資料庫` 內的 2020-2026 年 `award_*_flat.csv`，可執行：
@@ -141,6 +150,7 @@ password = "your-password"
 ## 外部資料源評估
 
 政府採購公開資料 API 與 g0v/PCC 相關資料源評估請見 docs/API_EVALUATION.md。
+
 
 
 

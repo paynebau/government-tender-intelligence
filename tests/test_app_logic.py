@@ -157,3 +157,53 @@ def test_load_data_from_csv_accepts_full_database_flat_files(tmp_path):
     assert len(data) == 1
     assert data.iloc[0]["Year"] == "2026"
     assert data.iloc[0]["TenderName"] == "完整資料測試案"
+
+
+def test_load_data_from_csv_dirs_prefers_full_database(tmp_path):
+    full_dir = tmp_path / "完整資料庫"
+    old_dir = tmp_path / "資料庫_CSV"
+    full_dir.mkdir()
+    old_dir.mkdir()
+    (full_dir / "award_2026_flat.csv").write_text(
+        "TenderName,TenderOrgName,TenderAwardPrice,BidderSuppName,NotObtainSuppName\n"
+        "完整資料案,完整機關,100,完整廠商,完整協作\n",
+        encoding="utf-8-sig",
+    )
+    (old_dir / "award_2025_SourceData.csv").write_text(
+        "TenderName,TenderOrgName,TenderAwardPrice,BidderSuppName,NotObtainSuppName\n"
+        "舊資料案,舊機關,50,舊廠商,舊協作\n",
+        encoding="utf-8-sig",
+    )
+
+    data, errors, csv_dir = app.load_data_from_csv_dirs([full_dir, old_dir])
+
+    assert errors == []
+    assert csv_dir == full_dir
+    assert len(data) == 1
+    assert data.iloc[0]["TenderName"] == "完整資料案"
+
+
+def test_load_data_falls_back_to_full_database_csv(tmp_path, monkeypatch):
+    full_dir = tmp_path / "完整資料庫"
+    old_dir = tmp_path / "資料庫_CSV"
+    full_dir.mkdir()
+    old_dir.mkdir()
+    (full_dir / "award_2026_flat.csv").write_text(
+        "TenderName,TenderOrgName,TenderAwardPrice,BidderSuppName,NotObtainSuppName\n"
+        "完整 fallback 案,完整機關,100,完整廠商,完整協作\n",
+        encoding="utf-8-sig",
+    )
+    (old_dir / "award_2025_SourceData.csv").write_text(
+        "TenderName,TenderOrgName,TenderAwardPrice,BidderSuppName,NotObtainSuppName\n"
+        "舊 fallback 案,舊機關,50,舊廠商,舊協作\n",
+        encoding="utf-8-sig",
+    )
+    monkeypatch.setattr(app, "CSV_DIRS", [full_dir, old_dir])
+
+    app.load_data.clear()
+    data, errors = app.load_data(str(tmp_path / "missing.sqlite"))
+    app.load_data.clear()
+
+    assert len(data) == 1
+    assert data.iloc[0]["TenderName"] == "完整 fallback 案"
+    assert any("完整資料庫" in error for error in errors)

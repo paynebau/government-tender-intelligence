@@ -9,7 +9,9 @@ import streamlit as st
 
 PROJECT_ROOT = Path(__file__).parent
 DB_PATH = PROJECT_ROOT / "database" / "tenders.sqlite"
+FULL_CSV_DIR = PROJECT_ROOT / "完整資料庫"
 CSV_DIR = PROJECT_ROOT / "資料庫_CSV"
+CSV_DIRS = [FULL_CSV_DIR, CSV_DIR]
 TITLE = "\u653f\u5e9c\u6a19\u6848\u60c5\u8cc7\u67e5\u8a62\u7cfb\u7d71"
 LOGIN_TITLE = "\u767b\u5165"
 USERNAME_LABEL = "\u5e33\u865f"
@@ -143,10 +145,10 @@ def show_app_header() -> None:
 def load_data(db_path: str) -> tuple[pd.DataFrame, list[str]]:
     path = Path(db_path)
     if not path.exists():
-        data, errors = load_data_from_csv(CSV_DIR)
+        data, errors, csv_dir = load_data_from_csv_dirs(CSV_DIRS)
         if data.empty:
             return data, [DB_MISSING_MESSAGE] + errors
-        return data, ["找不到 SQLite 資料庫，已改從 CSV 載入資料。"] + errors
+        return data, [f"找不到 SQLite 資料庫，已改從 CSV 載入資料：{csv_dir.name}"] + errors
 
     try:
         with sqlite3.connect(path) as conn:
@@ -184,6 +186,15 @@ def parse_year_from_csv(csv_path: Path) -> str | None:
         return parts[1]
     return None
 
+
+def load_data_from_csv_dirs(csv_dirs: list[Path]) -> tuple[pd.DataFrame, list[str], Path]:
+    all_errors: list[str] = []
+    for csv_dir in csv_dirs:
+        data, errors = load_data_from_csv(csv_dir)
+        if not data.empty:
+            return data, errors, csv_dir
+        all_errors.extend(errors)
+    return pd.DataFrame(), all_errors, csv_dirs[0]
 
 def load_data_from_csv(csv_dir: Path) -> tuple[pd.DataFrame, list[str]]:
     if not csv_dir.exists():
@@ -852,6 +863,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
